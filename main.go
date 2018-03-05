@@ -84,7 +84,7 @@ func authMethodForRemote(remote *git.Remote) (transport.AuthMethod, error) {
 }
 
 func authMethodForHTTPRemote(remote *git.Remote, fetchURL *url.URL) (transport.AuthMethod, error) {
-	// see if the parsed url holds user-info which should preceed token auth
+	// see if the parsed url holds user-info which should precede token auth
 	if fetchURL.User != nil {
 		pw, _ := fetchURL.User.Password()
 		return &githttp.BasicAuth{
@@ -218,20 +218,35 @@ func removeBranchFromConfig(repo *git.Repository, branch string) error {
 	return repo.Storer.SetConfig(config)
 }
 
+func openCurPathRepo() (*git.Repository, error) {
+	trypath, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("could not get current working directory: %s", err)
+	}
+	for len(trypath) > 1 {
+		repo, err := git.PlainOpen(trypath)
+		if err == git.ErrRepositoryNotExists {
+			trypath = filepath.Join(trypath, "../")
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("could not open git repository: %s", err)
+		}
+		return repo, nil
+	}
+	return nil, fmt.Errorf("cwd is not a git repository")
+}
+
 func main() {
 	pflag.BoolVarP(&flagDryRun, "dry-run", "", false, "does not actually delete branches")
 	pflag.Parse()
 
-	cwd, err := os.Getwd()
+	repo, err := openCurPathRepo()
 	if err != nil {
-		fmt.Printf("could not get current working directory: %s\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	repo, err := git.PlainOpen(cwd)
-	if err != nil {
-		fmt.Printf("could not open git repository: %s\n", err)
-		os.Exit(1)
-	}
+
 	refLoader := newRemoteRefLoader()
 	tbs, err := getTrackingBranches(repo, refLoader)
 	if err != nil {
