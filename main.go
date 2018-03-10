@@ -3,29 +3,25 @@ package main
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"os/user"
 	"path/filepath"
 
 	"github.com/spf13/pflag"
 	git "gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	gitconfig "gopkg.in/src-d/go-git.v4/plumbing/format/config"
-	"gopkg.in/src-d/go-git.v4/plumbing/transport"
-	githttp "gopkg.in/src-d/go-git.v4/plumbing/transport/http"
-	gitssh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
 
 var flagDryRun bool
 
 type remoteRefLoader struct {
 	cache map[string][]*plumbing.Reference
+	auth  *Authenticator
 }
 
-func newRemoteRefLoader() *remoteRefLoader {
+func newRemoteRefLoader(auth *Authenticator) *remoteRefLoader {
 	return &remoteRefLoader{
 		cache: make(map[string][]*plumbing.Reference),
+		auth:  auth,
 	}
 }
 
@@ -34,7 +30,10 @@ func (l *remoteRefLoader) listRefs(remote *git.Remote) ([]*plumbing.Reference, e
 	if ok {
 		return refs, nil
 	}
-	authMethod, err := authMethodForRemote(remote)
+	if len(remote.Config().URLs) == 0 {
+		return nil, errors.New("remote malformed: missing fetch URL")
+	}
+	authMethod, err := l.auth.GetMethod(remote.Config().URLs[0])
 	if err != nil {
 		return nil, fmt.Errorf("unable to get auth method for remote %q: %s", remote.Config().Name, err)
 	}
@@ -59,79 +58,6 @@ func (l *remoteRefLoader) findRef(remote *git.Remote, ref string) (*plumbing.Ref
 		}
 	}
 	return nil, errRefNotFound
-}
-
-func authMethodForRemote(remote *git.Remote) (transport.AuthMethod, error) {
-	if len(remote.Config().URLs) == 0 {
-		return nil, errors.New("remote malformed: missing fetch URL")
-	}
-	fetchURL, err := url.Parse(remote.Config().URLs[0])
-	if err != nil {
-		// decorate error and store it for later
-		err = fmt.Errorf("could not parse the remote fetch URL: %s", err)
-	}
-	if fetchURL == nil {
-		// try ssh
-		return authMethodForSSHRemote(remote)
-	}
-	switch fetchURL.Scheme {
-	case "http", "https":
-		return authMethodForHTTPRemote(remote, fetchURL)
-	case "ssh":
-		return authMethodForSSHRemote(remote)
-	}
-	return nil, fmt.Errorf("no auth method found for remote scheme %q", fetchURL.Scheme)
-}
-
-func authMethodForHTTPRemote(remote *git.Remote, fetchURL *url.URL) (transport.AuthMethod, error) {
-	// see if the parsed url holds user-info which should precede token auth
-	if fetchURL.User != nil {
-		pw, _ := fetchURL.User.Password()
-		return &githttp.BasicAuth{
-			Username: fetchURL.User.Username(),
-			Password: pw,
-		}, nil
-	}
-	// try to get a github token from global git config
-	osUser, err := user.Current()
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get current user: %s", err)
-	}
-	f, err := os.Open(filepath.Join(osUser.HomeDir, ".gitconfig"))
-	if err != nil {
-		return nil, fmt.Errorf("couldn't read .gitconfig: %s", err)
-	}
-	var config gitconfig.Config
-	if err := gitconfig.NewDecoder(f).Decode(&config); err != nil {
-		return nil, fmt.Errorf("couldn't parse .gitconfig: %s", err)
-	}
-	ghSection := config.Section("github")
-	if ghSection.Option("user") == "" {
-		return nil, errors.New("user not found in .gitconfig github section")
-	}
-	if ghSection.Option("token") == "" {
-		return nil, errors.New("token not found in .gitconfig github section")
-	}
-	return &githttp.BasicAuth{
-		Username: ghSection.Option("user"),
-		Password: ghSection.Option("token"),
-	}, nil
-}
-
-func authMethodForSSHRemote(remote *git.Remote) (transport.AuthMethod, error) {
-	agentAuth, err := gitssh.NewSSHAgentAuth("git")
-	if err == nil {
-		return agentAuth, nil
-	}
-	osUser, err := user.Current()
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get current user: %s", err)
-	}
-	keyAuth, err := gitssh.NewPublicKeysFromFile("git", filepath.Join(osUser.HomeDir, ".ssh", "id_rsa"), "")
-	if err == nil {
-		return keyAuth, nil
-	}
-	return nil, fmt.Errorf("neither ssh agent nor ssh keyfile auth could be built: %s", err)
 }
 
 type trackingBranch struct {
@@ -237,21 +163,29 @@ func openCurPathRepo() (*git.Repository, error) {
 	return nil, fmt.Errorf("cwd is not a git repository")
 }
 
+func errExit(err error) {
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(1)
+}
+
 func main() {
 	pflag.BoolVarP(&flagDryRun, "dry-run", "", false, "does not actually delete branches")
 	pflag.Parse()
 
 	repo, err := openCurPathRepo()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		errExit(err)
 	}
 
-	refLoader := newRemoteRefLoader()
+	auth, err := NewAuthenticator()
+	if err != nil {
+		errExit(fmt.Errorf("Could not build authenticator: %s", err))
+	}
+
+	refLoader := newRemoteRefLoader(auth)
 	tbs, err := getTrackingBranches(repo, refLoader)
 	if err != nil {
-		fmt.Printf("could not get tracking branches: %s\n", err)
-		os.Exit(1)
+		errExit(fmt.Errorf("could not get tracking branches: %s\n", err))
 	}
 
 	orphanedTBs := orphanedTrackingBranches(tbs)
