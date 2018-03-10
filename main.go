@@ -127,7 +127,7 @@ func authMethodForSSHRemote(remote *git.Remote) (transport.AuthMethod, error) {
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get current user: %s", err)
 	}
-	keyAuth, err := gitssh.NewPublicKeysFromFile("git", filepath.Join(osUser.HomeDir, "ssh", "id_rsa"), "")
+	keyAuth, err := gitssh.NewPublicKeysFromFile("git", filepath.Join(osUser.HomeDir, ".ssh", "id_rsa"), "")
 	if err == nil {
 		return keyAuth, nil
 	}
