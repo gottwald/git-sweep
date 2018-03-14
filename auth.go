@@ -7,6 +7,7 @@ import (
 	"os/user"
 	"path/filepath"
 
+	"github.com/kevinburke/ssh_config"
 	gitconfig "gopkg.in/src-d/go-git.v4/plumbing/format/config"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	githttp "gopkg.in/src-d/go-git.v4/plumbing/transport/http"
@@ -80,7 +81,20 @@ func (a *Authenticator) getSSHMethod(ep *transport.Endpoint) (transport.AuthMeth
 	if err == nil {
 		return agentAuth, nil
 	}
-	keyAuth, err := gitssh.NewPublicKeysFromFile("git", filepath.Join(a.osUser.HomeDir, ".ssh", "id_rsa"), "")
+	sshKeyPath := filepath.Join(a.osUser.HomeDir, ".ssh", "id_rsa")
+
+	sshConfig := ssh_config.DefaultUserSettings
+	idFile := sshConfig.Get(ep.Host, "IdentityFile")
+
+	if idFile != ssh_config.Default("IdentityFile") {
+		if len(idFile) > 2 && idFile[:2] == "~/" {
+			sshKeyPath = filepath.Join(a.osUser.HomeDir, idFile[2:])
+		} else {
+			sshKeyPath = idFile
+		}
+	}
+
+	keyAuth, err := gitssh.NewPublicKeysFromFile("git", sshKeyPath, "")
 	if err == nil {
 		return keyAuth, nil
 	}
