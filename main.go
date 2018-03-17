@@ -177,6 +177,19 @@ func main() {
 		errExit(err)
 	}
 
+	gc := NewGerritCleaner(repo)
+	branches, err := gc.MergedBranches()
+	if err != nil {
+		errExit(fmt.Errorf("getting gerrit branches failed: %s\n", err))
+	}
+	for _, branchRef := range branches {
+		if flagDryRun {
+			fmt.Printf("would delete %q\n", branchRef.Name())
+		} else {
+			repo.Storer.RemoveReference(branchRef.Name())
+		}
+	}
+
 	auth, err := NewAuthenticator()
 	if err != nil {
 		errExit(fmt.Errorf("Could not build authenticator: %s", err))
