@@ -34,6 +34,7 @@ func (gc *GerritCleaner) MergedBranches() ([]*plumbing.Reference, error) {
 		if branch.Name() == plumbing.Master {
 			continue
 		}
+		// TODO handle this error
 		isMerged, _ := gc.branchIsMerged(branch)
 		if isMerged {
 			mergedBranches = append(mergedBranches, branch)

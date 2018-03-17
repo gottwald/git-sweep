@@ -50,6 +50,9 @@ would delete "my-feature-branch"
 $ git sweep
 ```
 
+Please note `git pull --prune` or `git fetch --prune` is important because it removes the local references to the remote branches which `git-sweep` takes as hint that this is now merged.
+You can enable automatic pruning for pull and fetch for your remote by using: `git config remote.origin.prune true`.
+
 Gerrit Workflow
 ---------------
 
