@@ -46,7 +46,7 @@ func errExit(err error) {
 }
 
 func main() {
-	pflag.BoolVarP(&flagDryRun, "dry-run", "", false, "does not actually delete branches")
+	pflag.BoolVarP(&flagDryRun, "dry-run", "d", false, "does not actually delete branches")
 	pflag.Parse()
 
 	repo, err := openCurPathRepo()
