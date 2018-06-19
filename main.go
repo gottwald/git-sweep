@@ -73,6 +73,7 @@ func main() {
 		} else {
 			repo.Storer.RemoveReference(branchRef.Name())
 			removeBranchFromConfig(repo, branchRef.Name().Short())
+			fmt.Printf("deleted %q\n", branchRef.Name())
 		}
 	}
 }
