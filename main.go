@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/pflag"
 	git "gopkg.in/src-d/go-git.v4"
@@ -22,22 +21,17 @@ func removeBranchFromConfig(repo *git.Repository, branch string) error {
 }
 
 func openCurPathRepo() (*git.Repository, error) {
-	trypath, err := os.Getwd()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("could not get current working directory: %s", err)
 	}
-	for len(trypath) > 1 {
-		repo, err := git.PlainOpen(trypath)
-		if err == git.ErrRepositoryNotExists {
-			trypath = filepath.Join(trypath, "../")
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("could not open git repository: %s", err)
-		}
-		return repo, nil
+	repo, err := git.PlainOpenWithOptions(cwd, &git.PlainOpenOptions{
+		DetectDotGit: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not open git repository: %s", err)
 	}
-	return nil, fmt.Errorf("cwd is not a git repository")
+	return repo, nil
 }
 
 func errExit(err error) {
